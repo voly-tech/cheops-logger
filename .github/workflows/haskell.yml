@@ -1,47 +1,60 @@
-name: Haskell CI
+name: Binaries
+
+defaults:
+  run:
+    shell: bash
 
 on:
   push:
-    branches: [ master ]
+    branches:
+      - main
   pull_request:
-    branches: [ master ]
 
 jobs:
   build:
-
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
 
     strategy:
+      fail-fast: false
       matrix:
-        cabal: ["3.2"]
-        ghc:
-          - "8.10.2"
-          - "8.8.4"
+        ghc: ["8.10.7"]
+        os: [ubuntu-latest]
+        aeson: ["2.0.3.0"]
+        include:
+          - ghc: "8.10.7"
+            os: ubuntu-latest
+            aeson: "1.5.6.0"
 
     steps:
-    - uses: actions/checkout@v2
-    - uses: actions/setup-haskell@v1
-      with:
-        ghc-version: ${{ matrix.ghc }}
-        cabal-version: ${{ matrix.cabal }}
+      - uses: actions/checkout@v2
 
-    - name: Cache
-      uses: actions/cache@v1
-      env:
-        cache-name: cache-cabal
-      with:
-        path: ~/.cabal
-        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/*.cabal') }}-${{ hashFiles('**/cabal.project') }}
-        restore-keys: |
-          ${{ runner.os }}-build-${{ env.cache-name }}-
-          ${{ runner.os }}-build-
-          ${{ runner.os }}-
+      - uses: haskell/actions/setup@v1
+        id: setup-haskell
+        with:
+          ghc-version: ${{ matrix.ghc }}
+          cabal-version: 3.6.2.0
 
-    - name: Install dependencies
-      run: |
-        cabal update
-        cabal build --only-dependencies --enable-tests --enable-benchmarks co-log-json cheops-logger
-    - name: Build
-      run: cabal build --enable-tests --enable-benchmarks all
-    - name: Run tests
-      run: cabal test all
+      - name: Configure project
+        run: cabal configure --enable-tests --enable-benchmarks --write-ghc-environment-files=ghc8.4.4+ --constraint="aeson == ${{ matrix.aeson }}"
+
+      - name: Cache
+        uses: actions/cache@v1
+        env:
+          cache-name: cache-cabal
+        with:
+          path: ~/.cabal
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/*.cabal') }}-${{ hashFiles('**/cabal.project') }}
+          restore-keys: |
+            ${{ runner.os }}-build-${{ env.cache-name }}-
+            ${{ runner.os }}-build-
+            ${{ runner.os }}-
+
+      - name: Build
+        run: cabal build all --enable-tests --enable-benchmarks
+
+      - name: Check aeson version
+        run: cat dist-newstyle/cache/plan.json | jq . | grep -A 10 aeson
+
+      - name: Test
+        run: cabal test all --enable-tests --enable-benchmarks
+
